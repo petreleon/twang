@@ -1,0 +1,4 @@
+node_modules/
+audio_converted.wav
+*.log
+.DS_Store

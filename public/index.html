@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twang Analyzer – Vocal Clarity Detector</title>
+  <meta name="description" content="Analizează nivelul de twang vocal în timp real sau dintr-un fișier audio." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <header class="header">
+    <div class="logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14" stroke="url(#logoGrad)" stroke-width="2"/>
+        <path d="M8 16 Q12 8 16 16 Q20 24 24 16" stroke="url(#logoGrad)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <defs>
+          <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#a78bfa"/>
+            <stop offset="100%" stop-color="#f472b6"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>TwangAI</span>
+    </div>
+    <div class="header-badge">Voice Analysis Engine</div>
+  </header>
+
+  <main class="main">
+    <!-- Hero Score -->
+    <section class="hero">
+      <h1 class="hero-title">Twang Score</h1>
+      <p class="hero-sub">Analizează claritatea și rezonanța epilaringiană a vocii tale</p>
+
+      <div class="score-ring-wrapper">
+        <svg class="score-ring" viewBox="0 0 220 220" width="220" height="220">
+          <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#a78bfa"/>
+              <stop offset="50%" stop-color="#ec4899"/>
+              <stop offset="100%" stop-color="#f97316"/>
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <!-- Track -->
+          <circle cx="110" cy="110" r="95" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="12"/>
+          <!-- Progress arc -->
+          <circle id="scoreArc" cx="110" cy="110" r="95"
+            fill="none"
+            stroke="url(#ringGrad)"
+            stroke-width="12"
+            stroke-linecap="round"
+            stroke-dasharray="597"
+            stroke-dashoffset="597"
+            transform="rotate(-90 110 110)"
+            filter="url(#glow)"
+          />
+          <!-- Pulse ring -->
+          <circle id="pulseRing" cx="110" cy="110" r="95"
+            fill="none"
+            stroke="rgba(167,139,250,0.2)"
+            stroke-width="2"
+            class="pulse-ring"
+          />
+        </svg>
+
+        <div class="score-center">
+          <div id="mainScore" class="score-number">–</div>
+          <div class="score-label">/ 100</div>
+          <div id="scoreBadge" class="score-badge">Așteaptă...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Mode Tabs -->
+    <div class="mode-tabs">
+      <button id="tabFile" class="tab-btn active" onclick="switchTab('file')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        Analizează Fișier
+      </button>
+      <button id="tabMic" class="tab-btn" onclick="switchTab('mic')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        Microfon Live
+      </button>
+    </div>
+
+    <!-- File Panel -->
+    <div id="filePanel" class="panel active">
+      <div class="panel-card">
+        <div class="file-info">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2">
+            <path d="M9 18V5l12-2v13"/>
+            <circle cx="6" cy="18" r="3"/>
+            <circle cx="18" cy="16" r="3"/>
+          </svg>
+          <div>
+            <div class="file-name">WhatsApp Audio 2026-06-02.mp4</div>
+            <div class="file-meta">Detectare automată voce · Analiză spectrală completă</div>
+          </div>
+        </div>
+        <button id="analyzeBtn" class="btn-primary" onclick="analyzeFile()">
+          <span id="analyzeBtnText">Analizează Fișierul</span>
+          <div id="analyzeSpinner" class="spinner hidden"></div>
+        </button>
+      </div>
+
+      <!-- File Results -->
+      <div id="fileResults" class="results hidden">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">🎯</div>
+            <div class="stat-value" id="statAvg">–</div>
+            <div class="stat-label">Scor Mediu</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🔥</div>
+            <div class="stat-value" id="statMax">–</div>
+            <div class="stat-label">Scor Maxim</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">⏱️</div>
+            <div class="stat-value" id="statOnset">–</div>
+            <div class="stat-label">Debut Voce</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-value" id="statFrames">–</div>
+            <div class="stat-label">Frame-uri</div>
+          </div>
+        </div>
+
+        <!-- Timeline Chart -->
+        <div class="chart-section">
+          <h3 class="section-title">Evoluție Twang în Timp</h3>
+          <canvas id="timelineChart" height="140"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mic Panel -->
+    <div id="micPanel" class="panel hidden">
+      <div class="panel-card">
+        <div class="mic-status">
+          <div id="micIndicator" class="mic-indicator idle">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <div class="mic-rings">
+              <div class="mic-ring r1"></div>
+              <div class="mic-ring r2"></div>
+              <div class="mic-ring r3"></div>
+            </div>
+          </div>
+          <div>
+            <div id="micStatusText" class="mic-status-text">Microfon oprit</div>
+            <div class="mic-status-sub">Apasă Start pentru a începe analiza live</div>
+          </div>
+        </div>
+        <div class="mic-controls">
+          <button id="micStartBtn" class="btn-primary" onclick="startMic()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>
+            </svg>
+            Start
+          </button>
+          <button id="micStopBtn" class="btn-secondary hidden" onclick="stopMic()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/>
+            </svg>
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Components -->
+      <div id="liveComponents" class="panel-card live-components hidden">
+        <h3 class="section-title">Componente Live</h3>
+        <div class="component-bars">
+          <div class="comp-bar-row">
+            <span class="comp-label">Banda Twang (2–4kHz)</span>
+            <div class="bar-track"><div id="barTwang" class="bar-fill twang-color"></div></div>
+            <span id="valTwang" class="comp-val">0</span>
+          </div>
+          <div class="comp-bar-row">
+            <span class="comp-label">Elevație F1</span>
+            <div class="bar-track"><div id="barF1" class="bar-fill f1-color"></div></div>
+            <span id="valF1" class="comp-val">0</span>
+          </div>
+          <div class="comp-bar-row">
+            <span class="comp-label">Concentrație Mid</span>
+            <div class="bar-track"><div id="barMid" class="bar-fill mid-color"></div></div>
+            <span id="valMid" class="comp-val">0</span>
+          </div>
+          <div class="comp-bar-row">
+            <span class="comp-label">Brilliance</span>
+            <div class="bar-track"><div id="barBrill" class="bar-fill brill-color"></div></div>
+            <span id="valBrill" class="comp-val">0</span>
+          </div>
+        </div>
+        <div class="f1-display">F1 Freq: <span id="f1Val">–</span> Hz</div>
+      </div>
+
+      <!-- Spectrum Visualizer -->
+      <div class="panel-card">
+        <h3 class="section-title">Spectru Live</h3>
+        <canvas id="spectrumCanvas" height="120"></canvas>
+      </div>
+    </div>
+
+    <!-- Twang Explanation -->
+    <div class="info-section">
+      <h3 class="section-title">Ce este Twang-ul?</h3>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-icon">🔬</div>
+          <h4>Epilaringe</h4>
+          <p>Twang apare prin îngustarea tubului epilaringian, creând o cameră de rezonanță distinctă deasupra corzilor vocale.</p>
+        </div>
+        <div class="info-card">
+          <div class="info-icon">📈</div>
+          <h4>Markeri Spectral</h4>
+          <p>Caracterizat de energie concentrată în 1–4kHz, elevație F1/F2 și un raport brilliance mai ridicat față de vocea neutră.</p>
+        </div>
+        <div class="info-card">
+          <div class="info-icon">🎤</div>
+          <h4>Scor 0–100</h4>
+          <p>0–30: voce neutră sau de piept. 30–60: twang moderat. 60–80: twang clar. 80–100: twang puternic (country/musical).</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
