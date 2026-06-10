@@ -231,6 +231,103 @@ body {
 .panel-card:hover { border-color: rgba(167,139,250,0.2); }
 
 /* ─── File Panel ────────────────────────────────────────────────────────────── */
+.upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 24px;
+  border: 2px dashed rgba(167,139,250,0.3);
+  background: rgba(167,139,250,0.02);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.3s ease;
+  gap: 12px;
+}
+
+.upload-zone:hover, .upload-zone.dragover {
+  border-color: var(--pink);
+  background: rgba(236,72,153,0.04);
+  box-shadow: 0 0 20px rgba(236,72,153,0.1);
+}
+
+.upload-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(167,139,250,0.1);
+  border: 1px solid rgba(167,139,250,0.2);
+  transition: all 0.3s;
+}
+
+.upload-zone:hover .upload-icon {
+  background: rgba(236,72,153,0.15);
+  border-color: rgba(236,72,153,0.4);
+  transform: scale(1.05);
+}
+
+.upload-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.upload-text .highlight {
+  color: var(--purple);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.upload-zone:hover .upload-text .highlight {
+  color: var(--pink);
+}
+
+.upload-subtext {
+  font-size: 11px;
+  color: rgba(241,245,249,0.3);
+}
+
+.file-info-card {
+  margin-top: 16px;
+}
+
+.file-info-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.btn-reset {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.btn-reset:hover {
+  color: var(--pink);
+  background: rgba(236,72,153,0.1);
+  border-color: rgba(236,72,153,0.3);
+}
+
 .file-info {
   display: flex; align-items: center; gap: 16px;
   margin-bottom: 20px;

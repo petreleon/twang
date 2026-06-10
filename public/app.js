@@ -250,6 +250,40 @@ async function getFFmpeg() {
   return ffmpegInstance;
 }
 
+// ── Custom File Upload Logic ──────────────────────────────────────────────────
+let selectedFile = null;
+
+function triggerFileSelect() {
+  document.getElementById('fileInput').click();
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  setSelectedFile(file);
+}
+
+function setSelectedFile(file) {
+  selectedFile = file;
+  document.getElementById('selectedFileName').textContent = file.name;
+  
+  // Format metadata
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+  document.getElementById('selectedFileMeta').textContent = `Dimensiune: ${sizeMb} MB · Tip: ${file.type || 'Necunoscut'}`;
+  
+  // Show reset button
+  document.getElementById('resetFileBtn').classList.remove('hidden');
+}
+
+function resetToDefaultFile(e) {
+  if (e) e.stopPropagation(); // Impiedică deschiderea selectorului de fișiere la click pe dropZone
+  selectedFile = null;
+  document.getElementById('fileInput').value = '';
+  document.getElementById('selectedFileName').textContent = 'sample.mp4 (Implicit)';
+  document.getElementById('selectedFileMeta').textContent = 'Fișier demonstrativ pre-încărcat de pe server';
+  document.getElementById('resetFileBtn').classList.add('hidden');
+}
+
 async function analyzeFile() {
   const btn = document.getElementById('analyzeBtn');
   const btnText = document.getElementById('analyzeBtnText');
@@ -265,16 +299,27 @@ async function analyzeFile() {
     // 1. Get FFmpeg WebAssembly instance
     const ffmpeg = await getFFmpeg();
 
-    // 2. Fetch the audio file
-    btnText.textContent = 'Descărcare audio...';
-    const response = await fetch('/audio/sample.mp4');
-    if (!response.ok) throw new Error('Nu s-a putut încărca sample.mp4 de pe server.');
-    const arrayBuffer = await response.arrayBuffer();
+    let arrayBuffer;
+    let inputName = 'input.mp4';
+
+    if (selectedFile) {
+      // 2. Read user selected file
+      btnText.textContent = 'Citire fișier...';
+      arrayBuffer = await selectedFile.arrayBuffer();
+      const fileExt = selectedFile.name.split('.').pop() || 'mp4';
+      inputName = `input.${fileExt}`;
+    } else {
+      // 2. Fetch the default audio file
+      btnText.textContent = 'Descărcare audio...';
+      const response = await fetch('/audio/sample.mp4');
+      if (!response.ok) throw new Error('Nu s-a putut încărca sample.mp4 de pe server.');
+      arrayBuffer = await response.arrayBuffer();
+    }
 
     // 3. Process the file client-side using ffmpeg.wasm
     btnText.textContent = 'Conversie WASM...';
-    ffmpeg.FS('writeFile', 'input.mp4', new Uint8Array(arrayBuffer));
-    await ffmpeg.run('-i', 'input.mp4', '-ac', '1', '-ar', '44100', '-f', 'wav', '-acodec', 'pcm_s16le', 'output.wav');
+    ffmpeg.FS('writeFile', inputName, new Uint8Array(arrayBuffer));
+    await ffmpeg.run('-i', inputName, '-ac', '1', '-ar', '44100', '-f', 'wav', '-acodec', 'pcm_s16le', 'output.wav');
 
     // 4. Read the converted WAV bytes
     const wavData = ffmpeg.FS('readFile', 'output.wav');
@@ -655,4 +700,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Pre-load FFmpeg in background so it's ready when user clicks "Analizează Fișierul"
   getFFmpeg().catch(err => console.warn('FFmpeg pre-load warning:', err));
+
+  // Configure Drag & Drop for upload zone
+  const dropZone = document.getElementById('dropZone');
+  if (dropZone) {
+    // Prevent default browser drag-and-drop actions
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    // Highlight drop zone on hover
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+    });
+
+    // Handle dropped files
+    dropZone.addEventListener('drop', handleDrop, false);
+  }
+
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const file = dt.files[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  }
 });

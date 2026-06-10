@@ -110,17 +110,39 @@
 
     <!-- File Panel -->
     <div id="filePanel" class="panel active">
-      <div class="panel-card">
-        <div class="file-info">
+      <div class="panel-card upload-zone" id="dropZone" onclick="triggerFileSelect()">
+        <input type="file" id="fileInput" accept="audio/*,video/*" style="display: none;" onchange="handleFileSelect(event)" />
+        <div class="upload-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="upload-text">
+          <span class="highlight">Apasă pentru a încărca</span> sau trage fișierul aici
+        </div>
+        <div class="upload-subtext">Sunt suportate fișiere audio și video (MP3, WAV, M4A, MP4)</div>
+      </div>
+
+      <!-- File Details -->
+      <div class="panel-card file-info-card">
+        <div class="file-info-header">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2">
             <path d="M9 18V5l12-2v13"/>
             <circle cx="6" cy="18" r="3"/>
             <circle cx="18" cy="16" r="3"/>
           </svg>
           <div>
-            <div class="file-name">sample.mp4</div>
-            <div class="file-meta">Detectare automată voce · Analiză spectrală completă</div>
+            <div id="selectedFileName" class="file-name">sample.mp4 (Implicit)</div>
+            <div id="selectedFileMeta" class="file-meta">Fișier demonstrativ pre-încărcat de pe server</div>
           </div>
+          <button id="resetFileBtn" class="btn-reset hidden" onclick="resetToDefaultFile(event)" title="Reveniți la sample.mp4">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <polyline points="3 3 3 8 8 8"/>
+            </svg>
+          </button>
         </div>
         <button id="analyzeBtn" class="btn-primary" onclick="analyzeFile()">
           <span id="analyzeBtnText">Analizează Fișierul</span>
