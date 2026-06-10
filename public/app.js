@@ -1,24 +1,168 @@
 /* ============================================================
-   TwangAI – Client-side logic
-   - Score ring animation
-   - File analysis via REST
-   - Live mic analysis via WebSocket + Web Audio API
-   - Canvas charts: timeline + spectrum
+   TwangAI – Client-side logic (100% Browser Processing)
+   - FFT Engine in pure Javascript
+   - Voice Onset Detection in pure Javascript
+   - Audio conversion in browser using ffmpeg.wasm
+   - Live mic analysis using Web Audio API (ScriptProcessor)
+   - Premium Glassmorphism UI & Canvas Animations
    ============================================================ */
 
-// ── WebSocket ──────────────────────────────────────────────────────────────────
-const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-let ws = null;
+// ── State & Config ───────────────────────────────────────────────────────────
+const SAMPLE_RATE = 44100;
+const FFT_SIZE = 2048;
+const HOP_SIZE = 512;
 
-// ── State ─────────────────────────────────────────────────────────────────────
 let audioCtx = null;
 let mediaStream = null;
 let scriptProcessor = null;
 let micRunning = false;
 let scoreHistory = [];
 const MAX_HISTORY = 60;
+let lastMags = null;
 
-// ── Utility ───────────────────────────────────────────────────────────────────
+// ── Twang Analysis Engine (Pure JS) ───────────────────────────────────────────
+
+function computeFFT(samples) {
+  const N = FFT_SIZE;
+  const real = new Float64Array(N);
+  const imag = new Float64Array(N);
+  for (let i = 0; i < N && i < samples.length; i++) {
+    // Hann window
+    const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+    real[i] = samples[i] * w;
+  }
+  fftInPlace(real, imag, N);
+  const mags = new Float32Array(N / 2);
+  for (let i = 0; i < N / 2; i++) {
+    mags[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
+  }
+  return mags;
+}
+
+function fftInPlace(re, im, N) {
+  let j = 0;
+  for (let i = 1; i < N; i++) {
+    let bit = N >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+  }
+  for (let len = 2; len <= N; len <<= 1) {
+    const ang = (-2 * Math.PI) / len;
+    const wRe = Math.cos(ang);
+    const wIm = Math.sin(ang);
+    for (let i = 0; i < N; i += len) {
+      let curRe = 1, curIm = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const uRe = re[i + k], uIm = im[i + k];
+        const vRe = re[i + k + len / 2] * curRe - im[i + k + len / 2] * curIm;
+        const vIm = re[i + k + len / 2] * curIm + im[i + k + len / 2] * curRe;
+        re[i + k] = uRe + vRe; im[i + k] = uIm + vIm;
+        re[i + k + len / 2] = uRe - vRe; im[i + k + len / 2] = uIm - vIm;
+        const newCurRe = curRe * wRe - curIm * wIm;
+        curIm = curRe * wIm + curIm * wRe;
+        curRe = newCurRe;
+      }
+    }
+  }
+}
+
+function freqToBin(freq, sampleRate, fftSize) {
+  return Math.round((freq / sampleRate) * fftSize);
+}
+
+function bandEnergy(mags, fLow, fHigh, sampleRate) {
+  const N = mags.length * 2;
+  const lo = freqToBin(fLow, sampleRate, N);
+  const hi = freqToBin(fHigh, sampleRate, N);
+  let energy = 0;
+  for (let i = lo; i <= hi && i < mags.length; i++) {
+    energy += mags[i] * mags[i];
+  }
+  return energy;
+}
+
+function peakFreqInBand(mags, fLow, fHigh, sampleRate) {
+  const N = mags.length * 2;
+  const lo = freqToBin(fLow, sampleRate, N);
+  const hi = freqToBin(fHigh, sampleRate, N);
+  let maxMag = 0, maxBin = lo;
+  for (let i = lo; i <= hi && i < mags.length; i++) {
+    if (mags[i] > maxMag) {
+      maxMag = mags[i];
+      maxBin = i;
+    }
+  }
+  return (maxBin / N) * sampleRate;
+}
+
+function isVoiceActive(samples, threshold = 0.008) {
+  let rms = 0;
+  for (let s of samples) rms += s * s;
+  return Math.sqrt(rms / samples.length) > threshold;
+}
+
+function analyzeTwang(samples, sampleRate = SAMPLE_RATE) {
+  const mags = computeFFT(samples);
+  const totalEnergy = bandEnergy(mags, 80, 8000, sampleRate);
+  if (totalEnergy < 1e-10) return null;
+
+  const twangScore = Math.min(100, (bandEnergy(mags, 2000, 4000, sampleRate) / totalEnergy) * 600);
+  const f1Freq = peakFreqInBand(mags, 400, 1200, sampleRate);
+  const f1Score = Math.min(100, Math.max(0, ((f1Freq - 400) / 800) * 100));
+  const midScore = Math.min(100, (bandEnergy(mags, 1000, 2500, sampleRate) / totalEnergy) * 350);
+  const lowEnergy = bandEnergy(mags, 80, 1000, sampleRate);
+  const brillianceScore = Math.min(100, (lowEnergy > 0 ? bandEnergy(mags, 3000, 6000, sampleRate) / lowEnergy : 0) * 300);
+
+  const composite = twangScore * 0.40 + f1Score * 0.25 + midScore * 0.20 + brillianceScore * 0.15;
+
+  return {
+    score: Math.round(composite * 10) / 10,
+    components: {
+      twangBand: Math.round(twangScore * 10) / 10,
+      f1Elevation: Math.round(f1Score * 10) / 10,
+      midConcentration: Math.round(midScore * 10) / 10,
+      brilliance: Math.round(brillianceScore * 10) / 10,
+    },
+    f1Freq: Math.round(f1Freq),
+    spectralBands: {
+      sub:  bandEnergy(mags, 80, 300, sampleRate) / totalEnergy,
+      low:  bandEnergy(mags, 300, 800, sampleRate) / totalEnergy,
+      mid:  bandEnergy(mags, 800, 2000, sampleRate) / totalEnergy,
+      high: bandEnergy(mags, 2000, 4000, sampleRate) / totalEnergy,
+      air:  bandEnergy(mags, 4000, 8000, sampleRate) / totalEnergy,
+    },
+    mags: Array.from(mags).slice(0, 512),
+  };
+}
+
+function detectVoiceOnset(samples, sampleRate, windowMs = 50, thresholdMultiplier = 3) {
+  const windowSize = Math.round(sampleRate * windowMs / 1000);
+  
+  const rmsValues = [];
+  for (let i = 0; i + windowSize < samples.length; i += windowSize) {
+    let rms = 0;
+    for (let j = 0; j < windowSize; j++) rms += samples[i + j] ** 2;
+    rmsValues.push(Math.sqrt(rms / windowSize));
+  }
+
+  const baselineWindows = Math.ceil(500 / windowMs);
+  const baseline = rmsValues.slice(0, baselineWindows).reduce((a, b) => a + b, 0) / baselineWindows;
+  const threshold = baseline * thresholdMultiplier + 0.005;
+
+  for (let i = baselineWindows; i < rmsValues.length - 2; i++) {
+    if (rmsValues[i] > threshold && rmsValues[i+1] > threshold && rmsValues[i+2] > threshold) {
+      return i * windowSize;
+    }
+  }
+  return 0;
+}
+
+// ── UI Utilities ──────────────────────────────────────────────────────────────
+
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function getTwangLabel(score) {
@@ -57,7 +201,6 @@ function setScoreRing(score) {
   badge.style.borderColor = color + '40';
   badge.style.background = color + '15';
 
-  // Animate number
   numEl.style.transition = 'all 0.3s';
 }
 
@@ -74,7 +217,20 @@ function switchTab(tab) {
   if (tab === 'file' && micRunning) stopMic();
 }
 
-// ── File Analysis ─────────────────────────────────────────────────────────────
+// ── File Analysis (ffmpeg.wasm in Browser) ────────────────────────────────────
+let ffmpegInstance = null;
+
+async function getFFmpeg() {
+  if (ffmpegInstance) return ffmpegInstance;
+  const { createFFmpeg } = FFmpeg;
+  ffmpegInstance = createFFmpeg({
+    corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    log: false
+  });
+  await ffmpegInstance.load();
+  return ffmpegInstance;
+}
+
 async function analyzeFile() {
   const btn = document.getElementById('analyzeBtn');
   const btnText = document.getElementById('analyzeBtnText');
@@ -82,31 +238,88 @@ async function analyzeFile() {
   const results = document.getElementById('fileResults');
 
   btn.disabled = true;
-  btnText.textContent = 'Analizez...';
+  btnText.textContent = 'Inițializare WASM...';
   spinner.classList.remove('hidden');
   results.classList.add('hidden');
 
   try {
-    const res = await fetch('/api/analyze-file');
-    const data = await res.json();
+    // 1. Get FFmpeg WebAssembly instance
+    const ffmpeg = await getFFmpeg();
 
-    if (data.error) throw new Error(data.error);
+    // 2. Fetch the audio file
+    btnText.textContent = 'Descărcare audio...';
+    const response = await fetch('/audio/sample.mp4');
+    if (!response.ok) throw new Error('Nu s-a putut încărca sample.mp4 de pe server.');
+    const arrayBuffer = await response.arrayBuffer();
 
-    // Update hero score with avg
-    setScoreRing(data.avgScore);
+    // 3. Process the file client-side using ffmpeg.wasm
+    btnText.textContent = 'Conversie WASM...';
+    ffmpeg.FS('writeFile', 'input.mp4', new Uint8Array(arrayBuffer));
+    await ffmpeg.run('-i', 'input.mp4', '-ac', '1', '-ar', '44100', '-f', 'wav', '-acodec', 'pcm_s16le', 'output.wav');
 
-    // Stats
-    document.getElementById('statAvg').textContent = data.avgScore;
-    document.getElementById('statMax').textContent = data.maxScore;
-    document.getElementById('statOnset').textContent = data.onsetTime.toFixed(2) + 's';
-    document.getElementById('statFrames').textContent = data.totalFrames;
+    // 4. Read the converted WAV bytes
+    const wavData = ffmpeg.FS('readFile', 'output.wav');
+
+    // 5. Decode using browser's AudioContext (Web Audio API)
+    btnText.textContent = 'Decodare audio...';
+    const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuf = await tempCtx.decodeAudioData(wavData.buffer.slice(0));
+    const samples = audioBuf.getChannelData(0);
+    const sampleRate = audioBuf.sampleRate;
+
+    // 6. Voice onset detection
+    btnText.textContent = 'Detecție debut...';
+    const onsetSample = detectVoiceOnset(samples, sampleRate);
+    const onsetTime = onsetSample / sampleRate;
+
+    // 7. Perform frame-by-frame analysis
+    btnText.textContent = 'Analiză twang...';
+    const frameResults = [];
+    const effectiveSamples = samples.slice(onsetSample);
+
+    for (let i = 0; i + FFT_SIZE < effectiveSamples.length; i += HOP_SIZE) {
+      const frame = effectiveSamples.slice(i, i + FFT_SIZE);
+      
+      // Only process voiced frames
+      if (!isVoiceActive(frame, 0.008)) continue;
+
+      const analysis = analyzeTwang(frame, sampleRate);
+      if (analysis) {
+        frameResults.push({
+          time: (onsetSample + i) / sampleRate,
+          score: analysis.score,
+          components: analysis.components,
+          f1Freq: analysis.f1Freq
+        });
+      }
+    }
+
+    if (frameResults.length === 0) {
+      throw new Error('Nu s-a detectat voce activă în fișier.');
+    }
+
+    // 8. Calculate aggregate metrics
+    const scores = frameResults.map(r => r.score);
+    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const maxScore = Math.max(...scores);
+    const avgRounded = Math.round(avgScore * 10) / 10;
+    const maxRounded = Math.round(maxScore * 10) / 10;
+
+    // 9. Update UI with results
+    setScoreRing(avgRounded);
+
+    document.getElementById('statAvg').textContent = avgRounded;
+    document.getElementById('statMax').textContent = maxRounded;
+    document.getElementById('statOnset').textContent = onsetTime.toFixed(2) + 's';
+    document.getElementById('statFrames').textContent = frameResults.length;
 
     results.classList.remove('hidden');
 
-    // Draw timeline
-    drawTimeline(data.results);
+    // Draw timeline chart
+    drawTimeline(frameResults);
 
   } catch (e) {
+    console.error(e);
     alert('Eroare: ' + e.message);
   } finally {
     btn.disabled = false;
@@ -201,7 +414,7 @@ function drawTimeline(results) {
   }
 }
 
-// ── Mic Analysis ──────────────────────────────────────────────────────────────
+// ── Mic Analysis (100% Client-side Web Audio API) ─────────────────────────────
 async function startMic() {
   if (micRunning) return;
 
@@ -215,37 +428,39 @@ async function startMic() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
   const source = audioCtx.createMediaStreamSource(mediaStream);
 
-  // Use ScriptProcessor (legacy, works everywhere without worker)
   scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
   source.connect(scriptProcessor);
   scriptProcessor.connect(audioCtx.destination);
 
-  // WebSocket
-  ws = new WebSocket(`${wsProtocol}//${location.host}`);
-  ws.binaryType = 'arraybuffer';
+  micRunning = true;
+  updateMicUI(true);
+  console.log('🎤 Live mic analysis started client-side');
 
-  ws.onopen = () => {
-    micRunning = true;
-    updateMicUI(true);
-    console.log('WS connected');
-  };
-
-  ws.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
-    if (msg.type === 'analysis') {
-      handleLiveAnalysis(msg);
-    } else if (msg.type === 'silence') {
-      setMicStatus('silence');
-    }
-  };
-
-  ws.onclose = () => { micRunning = false; updateMicUI(false); };
+  let buffer = [];
 
   scriptProcessor.onaudioprocess = (e) => {
-    if (!micRunning || ws.readyState !== WebSocket.OPEN) return;
+    if (!micRunning) return;
     const inputData = e.inputBuffer.getChannelData(0);
-    const f32 = new Float32Array(inputData);
-    ws.send(f32.buffer);
+    
+    // push samples to local buffer
+    buffer.push(...inputData);
+
+    // Process in FFT_SIZE chunks (without overlap, matching original WS logic)
+    while (buffer.length >= FFT_SIZE) {
+      const frame = new Float32Array(buffer.splice(0, FFT_SIZE));
+      
+      if (!isVoiceActive(frame, 0.008)) {
+        setMicStatus('silence');
+        // Clear/zero mags when silent so the spectrum canvas visualizer goes flat
+        lastMags = new Float32Array(512);
+        continue;
+      }
+
+      const analysis = analyzeTwang(frame, SAMPLE_RATE);
+      if (analysis) {
+        handleLiveAnalysis(analysis);
+      }
+    }
   };
 
   // Start spectrum animation
@@ -254,12 +469,21 @@ async function startMic() {
 
 function stopMic() {
   micRunning = false;
-  if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
-  if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-  if (ws) { ws.close(); ws = null; }
+  if (scriptProcessor) {
+    scriptProcessor.disconnect();
+    scriptProcessor = null;
+  }
+  if (audioCtx) {
+    audioCtx.close();
+    audioCtx = null;
+  }
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
   updateMicUI(false);
   scoreHistory = [];
+  lastMags = null;
 }
 
 function updateMicUI(running) {
@@ -274,13 +498,17 @@ function updateMicUI(running) {
 
 function setMicStatus(status) {
   const ind = document.getElementById('micIndicator');
-  ind.className = 'mic-indicator ' + status;
+  if (ind) {
+    ind.className = 'mic-indicator ' + status;
+  }
   const textMap = { idle: 'Microfon oprit', active: 'Ascultă...', silence: 'Silențiu detectat' };
-  document.getElementById('micStatusText').textContent = textMap[status] || '';
+  const statusText = document.getElementById('micStatusText');
+  if (statusText) {
+    statusText.textContent = textMap[status] || '';
+  }
 }
 
 // ── Live Analysis Handler ─────────────────────────────────────────────────────
-let lastMags = null;
 
 function handleLiveAnalysis(msg) {
   setMicStatus('active');
@@ -303,8 +531,10 @@ function handleLiveAnalysis(msg) {
 }
 
 function updateBar(barId, valId, value) {
-  document.getElementById(barId).style.width = clamp(value, 0, 100) + '%';
-  document.getElementById(valId).textContent = Math.round(value);
+  const bar = document.getElementById(barId);
+  const val = document.getElementById(valId);
+  if (bar) bar.style.width = clamp(value, 0, 100) + '%';
+  if (val) val.textContent = Math.round(value);
 }
 
 // ── Spectrum Canvas ───────────────────────────────────────────────────────────
@@ -312,6 +542,7 @@ let spectrumAnimId = null;
 
 function animateSpectrum() {
   const canvas = document.getElementById('spectrumCanvas');
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.parentElement.clientWidth - 48;
@@ -398,14 +629,11 @@ function animateSpectrum() {
 document.addEventListener('DOMContentLoaded', () => {
   // Set ring circumference
   const arc = document.getElementById('scoreArc');
-  arc.style.strokeDasharray = CIRCUMFERENCE;
-  arc.style.strokeDashoffset = CIRCUMFERENCE;
+  if (arc) {
+    arc.style.strokeDasharray = CIRCUMFERENCE;
+    arc.style.strokeDashoffset = CIRCUMFERENCE;
+  }
 
-  // Resize timeline on window resize
-  window.addEventListener('resize', () => {
-    const results = document.getElementById('fileResults');
-    if (!results.classList.contains('hidden')) {
-      // redraw if data available
-    }
-  });
+  // Pre-load FFmpeg in background so it's ready when user clicks "Analizează Fișierul"
+  getFFmpeg().catch(err => console.warn('FFmpeg pre-load warning:', err));
 });
