@@ -110,14 +110,33 @@ function analyzeTwang(samples, sampleRate = SAMPLE_RATE) {
   const totalEnergy = bandEnergy(mags, 80, 8000, sampleRate);
   if (totalEnergy < 1e-10) return null;
 
-  const twangScore = Math.min(100, (bandEnergy(mags, 2000, 4000, sampleRate) / totalEnergy) * 600);
+  // 1. Decibel ratio of Twang band (2000-4000Hz) relative to Low band (80-1000Hz)
+  const lowEnergy = bandEnergy(mags, 80, 1000, sampleRate);
+  const twangEnergy = bandEnergy(mags, 2000, 4000, sampleRate);
+  
+  let ratioDb = -32;
+  if (lowEnergy > 1e-10 && twangEnergy > 1e-10) {
+    ratioDb = 10 * Math.log10(twangEnergy / lowEnergy);
+  }
+
+  // Map -32dB (no twang) to -12dB (high twang) to 0-100 score
+  const minDb = -32;
+  const maxDb = -12;
+  let twangScore = ((ratioDb - minDb) / (maxDb - minDb)) * 100;
+  twangScore = Math.max(0, Math.min(100, twangScore));
+
+  // 2. F1 score
   const f1Freq = peakFreqInBand(mags, 400, 1200, sampleRate);
   const f1Score = Math.min(100, Math.max(0, ((f1Freq - 400) / 800) * 100));
+
+  // 3. Mid score
   const midScore = Math.min(100, (bandEnergy(mags, 1000, 2500, sampleRate) / totalEnergy) * 350);
-  const lowEnergy = bandEnergy(mags, 80, 1000, sampleRate);
+
+  // 4. Brilliance score
   const brillianceScore = Math.min(100, (lowEnergy > 0 ? bandEnergy(mags, 3000, 6000, sampleRate) / lowEnergy : 0) * 300);
 
-  const composite = twangScore * 0.40 + f1Score * 0.25 + midScore * 0.20 + brillianceScore * 0.15;
+  // Weighted composite score dominated by Twang Score to avoid flat "floors"
+  const composite = twangScore * 0.80 + brillianceScore * 0.10 + f1Score * 0.05 + midScore * 0.05;
 
   return {
     score: Math.round(composite * 10) / 10,
